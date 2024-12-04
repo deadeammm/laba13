@@ -1,0 +1,161 @@
+from kivy.app import App
+from kivy.uix.widget import Widget
+from kivy.uix.label import Label
+from kivy.clock import Clock
+from kivy.graphics import Rectangle, Ellipse, Color
+from kivy.config import Config
+from kivy.core.image import Image as CoreImage
+import random
+
+# Настройка фиксированного размера окна
+Config.set('graphics', 'width', '720')
+Config.set('graphics', 'height', '1520')
+Config.set('graphics', 'resizable', False)
+
+# Константы игрового поля
+WIDTH = 720  # Ширина экрана
+HEIGHT = 1520  # Высота экрана
+FIELD_WIDTH = 680  # Ширина игрового поля
+FIELD_HEIGHT = 1280  # Высота игрового поля
+FIELD_X = (WIDTH - FIELD_WIDTH) // 2  # Сдвиг поля по X
+FIELD_Y = (HEIGHT - FIELD_HEIGHT) // 2  # Сдвиг поля по Y
+
+SNAKE_BLOCK = 40  # Размер блока змейки
+SNAKE_SPEED = 10  # Скорость игры
+
+class SnakeGame(Widget):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.snake = [[FIELD_X + FIELD_WIDTH // 2, FIELD_Y + FIELD_HEIGHT // 2]]  # Начальная позиция змейки
+        self.snake_dir = (0, 0)  # Направление движения
+        self.food = self.generate_food()  # Генерация еды
+        self.score = 0  # Начальный счёт
+        self.is_game_over = False
+
+        # Загрузка текстур
+        self.background = CoreImage("background.png")  # Фон
+        self.food_image = CoreImage("food.png")  # Еда
+
+        # Запуск игрового цикла
+        Clock.schedule_interval(self.update, 1 / SNAKE_SPEED)
+
+    def generate_food(self):
+        """Генерация новой еды в пределах игрового поля."""
+        x = random.randint(FIELD_X, FIELD_X + FIELD_WIDTH - SNAKE_BLOCK) // SNAKE_BLOCK * SNAKE_BLOCK
+        y = random.randint(FIELD_Y, FIELD_Y + FIELD_HEIGHT - SNAKE_BLOCK) // SNAKE_BLOCK * SNAKE_BLOCK
+
+        # Убедимся, что еда не генерируется внутри змейки
+        while [x, y] in self.snake:
+            x = random.randint(FIELD_X, FIELD_X + FIELD_WIDTH - SNAKE_BLOCK) // SNAKE_BLOCK * SNAKE_BLOCK
+            y = random.randint(FIELD_Y, FIELD_Y + FIELD_HEIGHT - SNAKE_BLOCK) // SNAKE_BLOCK * SNAKE_BLOCK
+
+        return [x, y]
+
+    def update(self, dt):
+        """Обновление состояния игры."""
+        if self.snake_dir == (0, 0) or self.is_game_over:
+            return  # Если змейка не двигается или игра окончена
+
+        # Новая позиция головы змейки
+        new_head = [self.snake[-1][0] + self.snake_dir[0],
+                    self.snake[-1][1] + self.snake_dir[1]]
+
+        # Проверяем столкновения с границами игрового поля
+        if (new_head[0] < FIELD_X or new_head[0] >= FIELD_X + FIELD_WIDTH or
+            new_head[1] < FIELD_Y or new_head[1] >= FIELD_Y + FIELD_HEIGHT):
+            self.game_over()
+            return
+
+        # Проверяем столкновение змейки с самой собой
+        if new_head in self.snake:
+            self.game_over()
+            return
+
+        # Обновляем змейку
+        self.snake.append(new_head)
+
+        # Проверяем, съела ли змейка еду
+        if new_head == self.food:
+            self.food = self.generate_food()  # Генерация новой еды
+            self.score += 1  # Увеличиваем счёт
+        else:
+            self.snake.pop(0)  # Удаляем хвост, если еда не съедена
+
+        # Перерисовываем экран
+        self.canvas.clear()
+        with self.canvas:
+            # Рисуем фон
+            Rectangle(texture=self.background.texture, pos=(0, 0), size=(WIDTH, HEIGHT))
+
+            # Рисуем игровое поле
+            Color(1, 1, 1, 1)  # Белый цвет для поля
+            Rectangle(pos=(FIELD_X, FIELD_Y), size=(FIELD_WIDTH, FIELD_HEIGHT))
+
+            # Рисуем еду
+            Rectangle(texture=self.food_image.texture, pos=(self.food[0], self.food[1]),
+                      size=(SNAKE_BLOCK, SNAKE_BLOCK))
+
+            # Рисуем змейку
+            Color(0, 0, 0)  # Чёрная змейка
+            for segment in self.snake:
+                Rectangle(pos=(segment[0], segment[1]), size=(SNAKE_BLOCK, SNAKE_BLOCK))
+
+    def game_over(self):
+        """Окончание игры."""
+        self.is_game_over = True  # Останавливаем обновление игры
+        self.canvas.clear()  # Очищаем экран
+
+        # Показ сообщения "Game Over"
+        label = Label(
+            text=f"Game Over!\nScore: {self.score}\nTap to restart.",
+            font_size=48,
+            halign='center',
+            valign='middle',
+            size_hint=(None, None),
+            size=(400, 200)
+        )
+        label.pos = (WIDTH // 2 - label.width // 2, HEIGHT // 2 - label.height // 2)
+        self.add_widget(label)
+
+    def on_touch_down(self, touch):
+        """Обрабатываем управление касаниями."""
+        if self.is_game_over:
+            # Перезапуск игры после окончания
+            self.reset_game()
+        else:
+            x, y = touch.pos
+            head_x, head_y = self.snake[-1]
+            if abs(x - head_x) > abs(y - head_y):
+                # Движение влево/вправо
+                if x > head_x:
+                    self.snake_dir = (SNAKE_BLOCK, 0)  # Вправо
+                else:
+                    self.snake_dir = (-SNAKE_BLOCK, 0)  # Влево
+            else:
+                # Движение вверх/вниз
+                if y > head_y:
+                    self.snake_dir = (0, SNAKE_BLOCK)  # Вверх
+                else:
+                    self.snake_dir = (0, -SNAKE_BLOCK)  # Вниз
+
+    def reset_game(self):
+        """Сброс игры для нового запуска."""
+        self.snake = [[FIELD_X + FIELD_WIDTH // 2, FIELD_Y + FIELD_HEIGHT // 2]]  # Сброс позиции
+        self.snake_dir = (0, 0)
+        self.food = self.generate_food()
+        self.score = 0
+        self.is_game_over = False
+        self.canvas.clear()  # Очищаем экран после рестарта
+        self.clear_widgets()  # Удаляем все добавленные виджеты
+
+
+class SnakeApp(App):
+    def build(self):
+        game = SnakeGame()
+        game.size = (WIDTH, HEIGHT)
+        game.pos = (0, 0)
+        return game
+
+
+if __name__ == "__main__":
+    SnakeApp().run()
